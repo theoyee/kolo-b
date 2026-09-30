@@ -1,0 +1,410 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  CASHIER
+  ACCOUNTANT
+}
+
+enum MovementType {
+  RESTOCK
+  SALE_DEDUCTION
+  DAMAGE
+  LOSS
+  RETURN
+  ADJUSTMENT
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  POS_TERMINAL
+  PAYSTACK
+  FLUTTERWAVE
+}
+
+enum PaymentStatus {
+  SUCCESS
+  PENDING
+  FAILED
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+  REFUNDED
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum ExpenseCategory {
+  RENT
+  DIESEL_GENERATOR
+  SALARIES
+  UTILITIES
+  MAINTENANCE
+  SUPPLIES
+  MARKETING
+  LOGISTICS
+  OTHER
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  isSuperAdmin Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  memberships  Member[]
+  refreshTokens RefreshToken[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Business {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  legalName   String?
+  rcNumber    String?  // Corporate Affairs Commission (CAC) Registration
+  address     String?
+  city        String?
+  state       String?  // Lagos, Abuja, Kano, Rivers, etc.
+  country     String   @default("NG")
+  currency    String   @default("NGN")
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings           BusinessSetting?
+  members            Member[]
+  categories         Category[]
+  products           Product[]
+  inventoryMovements InventoryMovement[]
+  customers          Customer[]
+  sales              Sale[]
+  orders             Order[]
+  payments           Payment[]
+  expenses           Expense[]
+  auditLogs          AuditLog[]
+
+  @@map("businesses")
+}
+
+model BusinessSetting {
+  id                       String   @id @default(uuid())
+  businessId               String   @unique
+  business                 Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  allowNegativeStock       Boolean  @default(false)
+  vatRateBps               Int      @default(750) // 750 bps = 7.5% Nigerian VAT
+  currencySymbol           String   @default("₦")
+  receiptNotes             String?  @default("Thank you for your patronage! Goods sold in good condition are not returnable.")
+  invoicePrefix            String   @default("KOLO-")
+  lowStockThresholdDefault Int      @default(10)
+
+  // Direct Bank Transfer Account Details
+  bankName                 String?  @default("Moniepoint Microfinance Bank")
+  bankAccountNumber        String?  @default("8239019201")
+  bankAccountName          String?  @default("Mama Chinedu Supermarket & Provisions")
+  bankTransferInstructions String?  @default("Transfer to this account and upload your payment receipt or enter session ID. Any admin will verify and clear your order.")
+
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("business_settings")
+}
+
+model Member {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  role        Role     @default(CASHIER)
+  permissions String[] @default([])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  salesRecorded Sale[]
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+  @@index([userId])
+  @@map("members")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  businessId  String
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+  @@map("categories")
+}
+
+model Product {
+  id             String              @id @default(uuid())
+  businessId     String
+  business       Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  categoryId     String?
+  category       Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  name           String
+  sku            String
+  barcode        String?
+  description    String?
+  unit           String              @default("PCS") // PCS, CTN, KG, LTR, PACK
+  costPrice      BigInt              @default(0) // In KOBO
+  sellingPrice   BigInt              @default(0) // In KOBO
+  currentStock   Int                 @default(0)
+  minStockAlert  Int                 @default(10)
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  saleItems          SaleItem[]
+  orderItems         OrderItem[]
+  inventoryMovements InventoryMovement[]
+
+  @@unique([businessId, sku])
+  @@index([businessId, barcode])
+  @@index([businessId, name])
+  @@map("products")
+}
+
+model InventoryMovement {
+  id              String       @id @default(uuid())
+  businessId      String
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type            MovementType
+  quantity        Int          // delta (+ for restock, - for sale)
+  previousStock   Int
+  newStock        Int
+  reason          String?
+  referenceId     String?      // saleId, orderId, or adjustment ID
+  createdByUserId String?
+  createdAt       DateTime     @default(now())
+
+  @@index([businessId, productId])
+  @@index([businessId, createdAt])
+  @@map("inventory_movements")
+}
+
+model Customer {
+  id             String    @id @default(uuid())
+  businessId     String
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  fullName       String
+  phone          String?
+  email          String?
+  address        String?
+  totalPurchases BigInt    @default(0) // In KOBO
+  currentBalance BigInt    @default(0) // In KOBO (positive = customer owes business)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  sales          Sale[]
+  orders         Order[]
+
+  @@index([businessId, phone])
+  @@index([businessId, fullName])
+  @@map("customers")
+}
+
+model Sale {
+  id             String        @id @default(uuid())
+  businessId     String
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  saleNumber     String
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cashierId      String?
+  cashier        Member?       @relation(fields: [cashierId], references: [id], onDelete: SetNull)
+  subtotal       BigInt        // In KOBO
+  discountAmount BigInt        @default(0) // In KOBO
+  taxAmount      BigInt        @default(0) // In KOBO (7.5% VAT)
+  grandTotal     BigInt        // In KOBO
+  amountPaid     BigInt        @default(0) // In KOBO
+  balanceDue     BigInt        @default(0) // In KOBO
+  paymentStatus  PaymentStatus @default(SUCCESS)
+  status         SaleStatus    @default(COMPLETED)
+  idempotencyKey String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items          SaleItem[]
+  payments       Payment[]
+
+  @@unique([businessId, saleNumber])
+  @@index([businessId, createdAt])
+  @@index([businessId, idempotencyKey])
+  @@map("sales")
+}
+
+model SaleItem {
+  id               String   @id @default(uuid())
+  saleId           String
+  sale             Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  productName      String
+  quantity         Int
+  unitCostPrice    BigInt   @default(0) // In KOBO
+  unitSellingPrice BigInt   // In KOBO
+  subtotal         BigInt   // In KOBO
+  discountAmount   BigInt   @default(0) // In KOBO
+  total            BigInt   // In KOBO
+
+  @@index([saleId])
+  @@map("sale_items")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  businessId     String
+  business       Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orderNumber    String
+  customerId     String?
+  customer       Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status         OrderStatus @default(DRAFT)
+  subtotal       BigInt      // In KOBO
+  discountAmount BigInt      @default(0) // In KOBO
+  taxAmount      BigInt      @default(0) // In KOBO
+  total          BigInt      // In KOBO
+  notes          String?
+  dueDate        DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  items          OrderItem[]
+  payments       Payment[]
+
+  @@unique([businessId, orderNumber])
+  @@index([businessId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice BigInt  // In KOBO
+  total     BigInt  // In KOBO
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  businessId       String
+  business         Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  saleId           String?
+  sale             Sale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  orderId          String?
+  order            Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  amount           BigInt        // In KOBO
+  method           PaymentMethod
+  reference        String        // Paystack reference, transfer session ID, POS RRN
+  status           PaymentStatus @default(SUCCESS)
+  idempotencyKey   String?
+  channelData      Json?         // Webhook raw response / gateway metadata
+  receiptUrl       String?       // Customer uploaded bank transfer receipt proof
+  senderName       String?       // Customer payer account name
+  senderBank       String?       // Payer bank (e.g. GTB, Zenith, OPay, Kuda)
+  adminNotes       String?       // Verification notes by admin
+  verifiedByUserId String?       // Admin or Manager ID who approved payment
+  verifiedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  @@unique([businessId, reference])
+  @@index([businessId, createdAt])
+  @@index([businessId, idempotencyKey])
+  @@index([businessId, status])
+  @@map("payments")
+}
+
+model Expense {
+  id           String          @id @default(uuid())
+  businessId   String
+  business     Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category     ExpenseCategory
+  title        String
+  amount       BigInt          // In KOBO
+  payee        String?
+  date         DateTime        @default(now())
+  recordedById String?
+  notes        String?
+  receiptUrl   String?
+  createdAt    DateTime        @default(now())
+
+  @@index([businessId, date])
+  @@index([businessId, category])
+  @@map("expenses")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // e.g. "AUTH_LOGIN", "SALE_CREATED", "STOCK_ADJUSTED", "SETTINGS_UPDATED"
+  entity     String   // e.g. "Sale", "Product", "User"
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([businessId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

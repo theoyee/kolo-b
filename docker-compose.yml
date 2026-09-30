@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kolo_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://kolo_user:kolo_secure_pass_2026@postgres:5432/kolo_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=kolo_super_secure_jwt_access_token_secret_key_2026_xyz
+      - JWT_REFRESH_SECRET=kolo_super_secure_jwt_refresh_token_secret_key_2026_abc
+      - JWT_EXPIRES_IN=1h
+      - JWT_REFRESH_EXPIRES_IN_DAYS=30
+      - PAYSTACK_SECRET_KEY=sk_test_kolo_dummy_paystack_secret_key
+      - PAYSTACK_PUBLIC_KEY=pk_test_kolo_dummy_paystack_public_key
+      - FLUTTERWAVE_SECRET_KEY=FLWSECK_TEST-kolo_dummy_secret_key
+      - FLUTTERWAVE_SECRET_HASH=kolo_flw_webhook_secret_hash_2026
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kolo_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: kolo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kolo_user
+      POSTGRES_PASSWORD: kolo_secure_pass_2026
+      POSTGRES_DB: kolo_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - kolo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kolo_user -d kolo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kolo_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: kolo_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - kolo_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kolo_network
+
+volumes:
+  kolo_pgdata:
+  kolo_redisdata:
+
+networks:
+  kolo_network:
+    driver: bridge

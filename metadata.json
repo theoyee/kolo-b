@@ -1,0 +1,6 @@
+{
+  "name": "Kolo - Nigerian SME Business Management Backend",
+  "description": "Multi-tenant, transactional backend API for Nigerian SMEs with Fastify, Prisma, PostgreSQL, Redis/BullMQ, RBAC, inventory, sales, and payment webhooks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

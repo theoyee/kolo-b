@@ -2,6 +2,11 @@
 
 A production-ready, multi-tenant modular monolith backend for Nigerian retail and wholesale SMEs (supermarkets, distributors, pharmacies, agro-merchants, and provision stores). Built with **Fastify**, **TypeScript**, **PostgreSQL**, **Prisma**, **Redis + BullMQ**, **JWT + Refresh Token rotation**, and **Docker**.
 
+> 📚 **Complete API Documentation Guide:** See [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)  
+> 🌐 **Live Deployed API (Render):** `https://kolo-b.onrender.com`  
+> 📑 **Interactive Swagger UI:** [https://kolo-b.onrender.com/documentation](https://kolo-b.onrender.com/documentation)  
+> 🔍 **OpenAPI 3.0 JSON Spec:** [https://kolo-b.onrender.com/documentation/json](https://kolo-b.onrender.com/documentation/json)
+
 ---
 
 ## 💳 Payment Architecture & Bank Transfer Flow
